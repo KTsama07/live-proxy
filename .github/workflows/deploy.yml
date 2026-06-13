@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'proxy/**'
 
 env:
   # ── Fill these in your GitHub repo secrets ──────────────────────────────────
@@ -47,7 +45,7 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
-          context: ./proxy
+          context: ./
           push: true
           tags: |
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
