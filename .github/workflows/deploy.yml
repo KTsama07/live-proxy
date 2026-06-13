@@ -1,0 +1,74 @@
+name: Deploy Proxy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'proxy/**'
+
+env:
+  # ── Fill these in your GitHub repo secrets ──────────────────────────────────
+  # AZURE_CREDENTIALS          → Service principal JSON (see setup steps)
+  # ACR_LOGIN_SERVER           → e.g. myregistry.azurecr.io
+  # ACR_USERNAME               → from Azure Container Registry > Access Keys
+  # ACR_PASSWORD               → from Azure Container Registry > Access Keys
+  # AZURE_RESOURCE_GROUP       → e.g. live-stream-rg
+  # AZURE_CONTAINER_APP_NAME   → e.g. live-proxy
+  # ALLOWED_ORIGIN             → e.g. https://my-live-stream.azurestaticapps.net
+
+  IMAGE_NAME: live-proxy
+
+jobs:
+  build-and-deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout code ────────────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Log in to Azure ───────────────────────────────────────────────────
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # ── 3. Log in to Azure Container Registry ───────────────────────────────
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # ── 4. Build and push Docker image to ACR ───────────────────────────────
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./proxy
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # ── 5. Deploy new image to Azure Container Apps ─────────────────────────
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          acrName: ${{ secrets.ACR_LOGIN_SERVER }}
+          containerAppName: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          imageToDeploy: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # ── 6. Update environment variables on the container app ────────────────
+      - name: Update environment variables
+        run: |
+          az containerapp update \
+            --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --set-env-vars ALLOWED_ORIGIN=${{ secrets.ALLOWED_ORIGIN }}
+
+      - name: Deploy complete
+        run: echo "✅ Proxy deployed to Azure Container Apps successfully!"
