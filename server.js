@@ -9,11 +9,11 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:8000';
 
 // ─── Upstream config ──────────────────────────────────────────────────────────
 const UPSTREAM_HOST = '3cup-live.s3.eu-west-3.amazonaws.com';
-const SPOOF_ORIGIN  = 'https://zz.depoooo.com';
+const SPOOF_ORIGIN = 'https://zz.depoooo.com';
 
 // ─── Cache config ─────────────────────────────────────────────────────────────
 //
-// HLS has two file types with very different caching needs:
+// HLS has two file types with very different caching needs: hehe
 //
 //   .m3u8  →  Playlist files. Change every ~6s on a live stream.
 //             Cache for 6s so all concurrent viewers share ONE upstream fetch
@@ -23,14 +23,14 @@ const SPOOF_ORIGIN  = 'https://zz.depoooo.com';
 //             returns the same bytes. Safe to cache for 60s.
 //             With 10 viewers, 10 requests → 1 upstream fetch. 10× savings.
 //
-const PLAYLIST_TTL_MS  = 1000; // 1 second (keeps live stream fresh)
-const SEGMENT_TTL_MS   = 60 * 1000; // 60 seconds
-const MAX_CACHE_BYTES  = 150 * 1024 * 1024; // 150 MB max — fits Azure Container Apps 512MB instance
+const PLAYLIST_TTL_MS = 1000; // 1 second (keeps live stream fresh)
+const SEGMENT_TTL_MS = 60 * 1000; // 60 seconds
+const MAX_CACHE_BYTES = 150 * 1024 * 1024; // 150 MB max — fits Azure Container Apps 512MB instance
 
 // ─── Cache store ──────────────────────────────────────────────────────────────
 // Structure: Map<path, { data: Buffer, contentType: string, expiresAt: number, size: number }>
-const cache       = new Map();
-let   cacheSizeBytes = 0;
+const cache = new Map();
+let cacheSizeBytes = 0;
 
 function getCached(path) {
     const entry = cache.get(path);
@@ -49,9 +49,9 @@ function setCached(path, data, contentType, ttl) {
 
     // Evict oldest entries until we're under the memory limit
     while (cacheSizeBytes + size > MAX_CACHE_BYTES && cache.size > 0) {
-        const oldestKey   = cache.keys().next().value;
+        const oldestKey = cache.keys().next().value;
         const oldestEntry = cache.get(oldestKey);
-        cacheSizeBytes   -= oldestEntry.size;
+        cacheSizeBytes -= oldestEntry.size;
         cache.delete(oldestKey);
         console.log(`[CACHE EVICT] ${oldestKey} (freed ${(oldestEntry.size / 1024).toFixed(1)} KB)`);
     }
@@ -75,22 +75,22 @@ function fetchUpstream(upstreamPath) {
     const promise = new Promise((resolve, reject) => {
         const options = {
             hostname: UPSTREAM_HOST,
-            path:     upstreamPath,
-            method:   'GET',
-            headers:  {
-                'Origin':     SPOOF_ORIGIN,
-                'Referer':    SPOOF_ORIGIN + '/',
+            path: upstreamPath,
+            method: 'GET',
+            headers: {
+                'Origin': SPOOF_ORIGIN,
+                'Referer': SPOOF_ORIGIN + '/',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             },
         };
 
         const req = https.request(options, (res) => {
             const chunks = [];
-            res.on('data',  (chunk) => chunks.push(chunk));
-            res.on('end',   ()      => resolve({
-                statusCode:  res.statusCode,
+            res.on('data', (chunk) => chunks.push(chunk));
+            res.on('end', () => resolve({
+                statusCode: res.statusCode,
                 contentType: res.headers['content-type'] || 'application/octet-stream',
-                data:        Buffer.concat(chunks),
+                data: Buffer.concat(chunks),
             }));
         });
 
@@ -127,18 +127,18 @@ app.use('/proxy', (req, res, next) => {
 
 // ─── Main proxy + cache handler ───────────────────────────────────────────────
 app.get('/proxy/*', async (req, res) => {
-    const proxyPath    = req.path.replace(/^\/proxy/, ''); // /proxy/max1/seg.ts → /max1/seg.ts
-    const isPlaylist   = proxyPath.endsWith('.m3u8');
-    const ttl          = isPlaylist ? PLAYLIST_TTL_MS : SEGMENT_TTL_MS;
+    const proxyPath = req.path.replace(/^\/proxy/, ''); // /proxy/max1/seg.ts → /max1/seg.ts
+    const isPlaylist = proxyPath.endsWith('.m3u8');
+    const ttl = isPlaylist ? PLAYLIST_TTL_MS : SEGMENT_TTL_MS;
 
     // ── 1. Cache hit ────────────────────────────────────────────────────────
     const cached = getCached(proxyPath);
     if (cached) {
         console.log(`[CACHE HIT]  ${proxyPath} (${(cached.size / 1024).toFixed(1)} KB)`);
-        res.setHeader('Content-Type',                cached.contentType);
+        res.setHeader('Content-Type', cached.contentType);
         res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-        res.setHeader('X-Cache',                     'HIT');
-        res.setHeader('X-Content-Type-Options',      'nosniff');
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Cache-Control', isPlaylist ? 'no-store' : 'public, max-age=60');
         return res.send(cached.data);
     }
@@ -157,10 +157,10 @@ app.get('/proxy/*', async (req, res) => {
 
         console.log(`[CACHE SET]  ${proxyPath} TTL=${ttl / 1000}s size=${(upstream.data.length / 1024).toFixed(1)}KB | cache=${(cacheSizeBytes / 1024 / 1024).toFixed(1)}MB / ${MAX_CACHE_BYTES / 1024 / 1024}MB`);
 
-        res.setHeader('Content-Type',                upstream.contentType);
+        res.setHeader('Content-Type', upstream.contentType);
         res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-        res.setHeader('X-Cache',                     'MISS');
-        res.setHeader('X-Content-Type-Options',      'nosniff');
+        res.setHeader('X-Cache', 'MISS');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Cache-Control', isPlaylist ? 'no-store' : 'public, max-age=60');
         res.send(upstream.data);
 
@@ -173,10 +173,10 @@ app.get('/proxy/*', async (req, res) => {
 // ─── Cache stats endpoint (internal monitoring only) ──────────────────────────
 app.get('/health', (req, res) => {
     res.json({
-        status:       'ok',
+        status: 'ok',
         cacheEntries: cache.size,
-        cacheMB:      (cacheSizeBytes / 1024 / 1024).toFixed(2),
-        maxMB:        MAX_CACHE_BYTES / 1024 / 1024,
+        cacheMB: (cacheSizeBytes / 1024 / 1024).toFixed(2),
+        maxMB: MAX_CACHE_BYTES / 1024 / 1024,
         inflightReqs: inflight.size,
     });
 });
@@ -189,5 +189,5 @@ app.listen(PORT, () => {
     console.log(`Allowed origin  : ${ALLOWED_ORIGIN}`);
     console.log(`Cache limit     : ${MAX_CACHE_BYTES / 1024 / 1024} MB`);
     console.log(`Playlist TTL    : ${PLAYLIST_TTL_MS / 1000}s`);
-    console.log(`Segment TTL     : ${SEGMENT_TTL_MS  / 1000}s`);
+    console.log(`Segment TTL     : ${SEGMENT_TTL_MS / 1000}s`);
 });
